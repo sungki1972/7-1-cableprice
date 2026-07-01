@@ -67,6 +67,11 @@
   .hint{font-size:12px;color:var(--muted);margin:10px 0 0}
   details summary{cursor:pointer;color:var(--muted);font-size:12px}
   .subtable td,.subtable th{padding:6px 9px;font-size:12px}
+  .tabs{display:flex;gap:8px;margin:0 0 16px}
+  .tab{background:var(--chip);border:1px solid var(--line);color:var(--muted);border-radius:9px;
+    padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .diff-mini{font-size:11px;color:var(--muted);margin-left:4px}
   td input.other-in{width:92px;text-align:right;padding:6px 8px;font-size:13px}
   @media(max-width:640px){ th,td{padding:7px 6px;font-size:12px} main{padding:12px} }
 </style>
@@ -93,8 +98,13 @@
 
 <main id="app" style="display:none">
 
-  <!-- ISVM vs 타사 통합 표 -->
-  <div class="card">
+  <nav class="tabs">
+    <button class="tab active" id="tab-live" onclick="switchTab('live')">📡 실시간 조회</button>
+    <button class="tab" id="tab-hist" onclick="switchTab('hist')">🗂 저장 이력</button>
+  </nav>
+
+  <!-- 탭1) ISVM vs 타사 통합 표 -->
+  <div class="card" id="viewLive">
     <h2>ISVM vs 타사 할인율 <span class="tag" id="isvmStatus">불러오는 중…</span></h2>
     <div class="row" style="margin-bottom:12px">
       <div class="field" style="flex:1;min-width:220px">
@@ -127,8 +137,27 @@
       차이 = ISVM − 타사 (%p, <span class="disc pos">+</span>면 ISVM이 더 할인).
       입력칸 회색 값 = 해당 회사의 최근 저장값.
     </div>
-    <details id="histWrap" style="margin-top:14px">
-      <summary>저장 이력 펼치기 ▾ (<span id="histCount">0</span>건)</summary>
+  </div>
+
+  <!-- 탭2) 저장 이력 (날짜별) -->
+  <div class="card" id="viewHist" style="display:none">
+    <h2>저장 이력 <span class="tag" id="histTag">날짜별 · ISVM vs 타사</span></h2>
+    <div class="row" style="margin-bottom:12px">
+      <div class="field">
+        <label>날짜 선택</label>
+        <select id="histDate" onchange="renderSaved()" style="min-width:150px"></select>
+      </div>
+      <button class="btn ghost sm" onclick="refreshHist()">↻ 새로고침</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead id="savedHead"></thead>
+        <tbody id="savedBody"><tr><td class="empty">저장된 이력이 없습니다.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="hint">각 타사 열의 회색 괄호 = ISVM과의 차이(%p, +면 ISVM이 더 할인).</div>
+    <details style="margin-top:14px">
+      <summary>상세 목록 펼치기 ▾ (<span id="histCount">0</span>건, 삭제 가능)</summary>
       <div class="scroll" style="margin-top:10px">
         <table class="subtable">
           <thead><tr><th class="l">날짜</th><th class="l">코드</th><th class="l">회사</th>
@@ -312,7 +341,74 @@ async function loadHistory(){
   HISTORY = data||[];
   fillOtherFromHistory();
   renderIsvm();
+  fillHistDates();
+  renderSaved();
   renderHistory();
+}
+async function refreshHist(){ await loadHistory(); toast('이력 새로고침 완료'); }
+
+// ── 탭 전환 ──────────────────────────────────────────────
+function switchTab(t){
+  document.getElementById('viewLive').style.display = t==='live' ? '' : 'none';
+  document.getElementById('viewHist').style.display = t==='hist' ? '' : 'none';
+  document.getElementById('tab-live').classList.toggle('active', t==='live');
+  document.getElementById('tab-hist').classList.toggle('active', t==='hist');
+  if(t==='hist') loadHistory();   // 탭 열 때 최신 데이터로 갱신
+}
+
+// ── 저장 이력: 날짜별 피벗 ────────────────────────────────
+function fillHistDates(){
+  const sel = document.getElementById('histDate');
+  const dates = [...new Set(HISTORY.map(r=>r.recorded_date))]; // HISTORY가 날짜 desc → 최신 먼저
+  const prev = sel.value;
+  sel.innerHTML = dates.map(d=>`<option value="${d}">${d}</option>`).join('');
+  if(dates.includes(prev)) sel.value = prev;
+}
+function renderSaved(){
+  const head = document.getElementById('savedHead');
+  const body = document.getElementById('savedBody');
+  const d = document.getElementById('histDate').value;
+  const rows = HISTORY.filter(r=>r.recorded_date===d);
+  if(!d || !rows.length){
+    head.innerHTML=''; body.innerHTML='<tr><td class="empty">저장된 이력이 없습니다. 실시간 조회 탭에서 💾 저장해보세요.</td></tr>';
+    return;
+  }
+  const companies = [...new Set(rows.filter(r=>r.company!=='ISVM').map(r=>r.company))].sort();
+  // 코드 순서: 현재 조회 코드 순 → 그 외는 뒤에
+  const inRows = [...new Set(rows.map(r=>r.code))];
+  const codes = CODES.filter(c=>inRows.includes(c)).concat(inRows.filter(c=>!CODES.includes(c)));
+  const byCode = {};
+  for(const r of rows){ (byCode[r.code] = byCode[r.code]||{})[r.company] = r; }
+
+  head.innerHTML = `<tr>
+    <th class="l">코드</th><th class="l">상품명</th><th class="l">규격</th>
+    <th>표준단가</th><th>negoPrice</th><th>ISVM 할인율</th>
+    ${companies.map(co=>`<th>${co}</th>`).join('')}
+  </tr>`;
+  body.innerHTML = codes.map(code=>{
+    const g = byCode[code] || {};
+    const iv = g['ISVM'];
+    const name = (iv||Object.values(g)[0]||{});
+    const coCells = companies.map(co=>{
+      const r = g[co];
+      if(!r || r.discount==null) return '<td class="num"><span class="muted">—</span></td>';
+      let mini = '';
+      if(iv && iv.discount!=null){
+        const df = Math.round((Number(iv.discount)-Number(r.discount))*10)/10;
+        mini = `<span class="diff-mini">(${df>0?'+':''}${df})</span>`;
+      }
+      return `<td class="num">${discCell(r.discount)}${mini}</td>`;
+    }).join('');
+    return `<tr>
+      <td class="l code">${code}</td>
+      <td class="l">${name.product_name||''}</td>
+      <td class="l muted">${name.spec||''}</td>
+      <td class="num">${iv?fmt(iv.unit_price):'—'}</td>
+      <td class="num">${iv?fmt(iv.nego_price):'—'}</td>
+      <td class="num">${iv?discCell(iv.discount):'<span class="muted">—</span>'}</td>
+      ${coCells}
+    </tr>`;
+  }).join('');
 }
 async function delRow(id){
   if(!confirm('이 기록을 삭제할까요?')) return;
