@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전선 가격비교 · ISVM vs 타사</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#181c2e; --panel2:#1f2438; --line:#2b3350;
+    --txt:#e8ebf5; --muted:#98a0bd; --accent:#5b9dff; --accent2:#3ad39f;
+    --warn:#ff6b6b; --chip:#252b45;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Segoe UI",sans-serif;
+    background:var(--bg);color:var(--txt);font-size:14px;}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#141830,#0f1220);
+    border-bottom:1px solid var(--line);padding:12px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:-.3px}
+  header .date{color:var(--muted);font-size:13px}
+  header .spacer{flex:1}
+  .btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 14px;
+    font-size:13px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap}
+  .btn:hover{filter:brightness(1.12)}
+  .btn.ghost{background:var(--chip);color:var(--txt);border:1px solid var(--line)}
+  .btn.green{background:var(--accent2);color:#04110c}
+  .btn.sm{padding:5px 10px;font-size:12px;border-radius:6px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  main{max-width:1180px;margin:0 auto;padding:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:20px}
+  .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .card h2 .tag{font-size:11px;color:var(--muted);font-weight:500;background:var(--chip);
+    padding:2px 8px;border-radius:20px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-align:right;background:var(--panel2);position:sticky;top:0}
+  th.l,td.l{text-align:left}
+  tbody tr:hover{background:#1c2138}
+  .num{font-variant-numeric:tabular-nums}
+  .disc{font-weight:700}
+  .disc.neg{color:var(--warn)}
+  .disc.pos{color:var(--accent2)}
+  .code{font-family:ui-monospace,Menlo,monospace;color:var(--accent)}
+  .muted{color:var(--muted)}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    border-radius:7px;padding:8px 10px;font-size:13px;outline:none}
+  input:focus,select:focus{border-color:var(--accent)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:11px;color:var(--muted);padding-left:2px}
+  .field input,.field select{min-width:0}
+  .scroll{overflow:auto;border-radius:10px;border:1px solid var(--line)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#222842;
+    border:1px solid var(--line);padding:11px 18px;border-radius:10px;font-size:13px;z-index:60;
+    opacity:0;transition:.25s;pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  .toast.show{opacity:1;bottom:30px}
+  .toast.err{border-color:var(--warn)}
+  .gate{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center}
+  .gate .box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:32px;
+    width:300px;text-align:center}
+  .gate h3{margin:0 0 18px}
+  .gate input{width:100%;text-align:center;font-size:22px;letter-spacing:8px;padding:12px;margin-bottom:14px}
+  .badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--chip);color:var(--muted)}
+  .cmp-company{font-weight:600}
+  .cmp-isvm{color:var(--accent)}
+  .del{color:var(--warn);cursor:pointer;font-size:12px;background:none;border:0}
+  .empty{color:var(--muted);text-align:center;padding:26px;font-size:13px}
+  .hint{font-size:12px;color:var(--muted);margin:-4px 0 12px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px}
+  .subtable td,.subtable th{padding:6px 9px;font-size:12px}
+  @media(max-width:640px){ th,td{padding:7px 6px;font-size:12px} main{padding:12px} }
+</style>
+</head>
+<body>
+
+<!-- PIN 게이트 -->
+<div class="gate" id="gate" style="display:none">
+  <div class="box">
+    <h3>🔌 전선 가격비교</h3>
+    <input id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off">
+    <button class="btn" style="width:100%" onclick="submitPin()">입장</button>
+    <div id="pinErr" style="color:var(--warn);font-size:12px;margin-top:10px;min-height:16px"></div>
+  </div>
+</div>
+
+<header>
+  <h1>🔌 전선 가격비교</h1>
+  <span class="date" id="todayLabel"></span>
+  <span class="spacer"></span>
+  <button class="btn ghost sm" onclick="refreshIsvm()">↻ ISVM 새로고침</button>
+  <button class="btn green sm" onclick="saveAllIsvm()">💾 오늘 ISVM 할인율 전체 저장</button>
+</header>
+
+<main id="app" style="display:none">
+
+  <!-- 1) ISVM 실시간 조회 -->
+  <div class="card">
+    <h2>ISVM 실시간 조회 <span class="tag" id="isvmStatus">불러오는 중…</span></h2>
+    <div class="row" style="margin-bottom:12px">
+      <div class="field" style="flex:1;min-width:240px">
+        <label>조회 코드 (/ 또는 , 로 구분)</label>
+        <input id="codesInput" placeholder="53587/1275/1288 …">
+      </div>
+      <button class="btn sm" onclick="applyCodes()">코드 적용</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th class="l">코드</th><th class="l">상품명</th><th class="l">규격</th>
+          <th>표준단가</th><th>negoPrice</th><th>할인율</th><th>저장</th>
+        </tr></thead>
+        <tbody id="isvmBody">
+          <tr><td colspan="7" class="empty">로딩 중…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="hint">할인율 = ISVM 제공값. 검증식: 표준단가 × (1 − 할인율/100) = negoPrice</div>
+  </div>
+
+  <!-- 2) 타사 할인율 수동 입력 -->
+  <div class="card">
+    <h2>타사 할인율 입력 <span class="tag">수동 · Supabase 저장</span></h2>
+    <div class="row">
+      <div class="field">
+        <label>코드</label>
+        <select id="cmpCode"></select>
+      </div>
+      <div class="field">
+        <label>회사명</label>
+        <input id="cmpCompany" placeholder="예: 대한전선" style="width:130px">
+      </div>
+      <div class="field">
+        <label>할인율(%)</label>
+        <input id="cmpDiscount" type="number" step="0.1" placeholder="-100" style="width:100px">
+      </div>
+      <div class="field">
+        <label>날짜</label>
+        <input id="cmpDate" type="date" style="width:150px">
+      </div>
+      <div class="field" style="flex:1;min-width:160px">
+        <label>메모</label>
+        <input id="cmpMemo" placeholder="비고">
+      </div>
+      <button class="btn green" onclick="saveCompany()">저장</button>
+    </div>
+    <div class="hint">할인율이 음수면 negoPrice가 표준단가보다 높다는 뜻(전선 특성). 그대로 입력하세요.</div>
+  </div>
+
+  <!-- 3) 코드별 비교 -->
+  <div class="card">
+    <h2>코드별 할인율 비교 <span class="tag">ISVM vs 타사</span></h2>
+    <div class="row" style="margin-bottom:12px">
+      <div class="field">
+        <label>코드 선택</label>
+        <select id="viewCode" onchange="renderCompare()"></select>
+      </div>
+      <button class="btn ghost sm" onclick="loadHistory()">↻ 이력 새로고침</button>
+    </div>
+    <div id="compareBox"><div class="empty">코드를 선택하세요.</div></div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Supabase ─────────────────────────────────────────────
+const SB_URL = "https://pvhntshaadmbmpskwqmg.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2aG50c2hhYWRtYm1wc2t3cW1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg3MzQ0MzUsImV4cCI6MjA1NDMxMDQzNX0.Bxi5dVLrb_t_Y7NdT34If3A0FigTopUWSuT9rdcHzYw";
+const sb = supabase.createClient(SB_URL, SB_KEY);
+const TABLE = "cable_price_history";
+
+// ── 상태 ─────────────────────────────────────────────────
+let CODES = [];           // 현재 조회 코드 목록
+let ISVM = {};            // code -> lookup 결과
+let HISTORY = [];         // Supabase 전체 이력 rows
+
+const todayStr = () => new Date().toISOString().slice(0,10);
+
+function toast(msg, err){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show' + (err?' err':'');
+  clearTimeout(t._t); t._t = setTimeout(()=>t.className='toast', 2600);
+}
+const fmt = n => (n==null||n==='')?'—':Number(n).toLocaleString('ko-KR');
+function discCell(d){
+  if(d==null||d==='') return '<span class="muted">—</span>';
+  const cls = Number(d)<0 ? 'neg' : 'pos';
+  const sign = Number(d)>0 ? '+' : '';
+  return `<span class="disc ${cls}">${sign}${Number(d)}%</span>`;
+}
+
+// ── PIN ──────────────────────────────────────────────────
+async function checkBuild(){
+  const r = await fetch('/api/build'); return r.json();
+}
+async function submitPin(){
+  const pin = document.getElementById('pinInput').value.trim();
+  const r = await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pin})});
+  if(r.ok){ document.getElementById('gate').style.display='none'; boot(); }
+  else document.getElementById('pinErr').textContent='PIN이 틀렸습니다';
+}
+document.getElementById('pinInput').addEventListener('keydown',e=>{if(e.key==='Enter')submitPin();});
+
+// ── ISVM 조회 ─────────────────────────────────────────────
+async function fetchIsvm(codes){
+  document.getElementById('isvmStatus').textContent = '불러오는 중…';
+  const r = await fetch('/api/isvm',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({codes})});
+  if(!r.ok){ document.getElementById('isvmStatus').textContent='조회 실패'; toast('ISVM 조회 실패',true); return; }
+  const j = await r.json();
+  ISVM = j.result || {};
+  document.getElementById('isvmStatus').textContent =
+    `${todayStr()} · ${Object.values(ISVM).filter(x=>x.found).length}/${codes.length}건`;
+  renderIsvm();
+  fillCodeSelects();
+}
+function renderIsvm(){
+  const b = document.getElementById('isvmBody');
+  if(!CODES.length){ b.innerHTML='<tr><td colspan="7" class="empty">코드 없음</td></tr>'; return; }
+  b.innerHTML = CODES.map(code=>{
+    const it = ISVM[code] || {};
+    if(!it.found){
+      return `<tr><td class="l code">${code}</td><td colspan="6" class="l muted">조회 안됨${it.error?(' · '+it.error):''}</td></tr>`;
+    }
+    return `<tr>
+      <td class="l code">${code}</td>
+      <td class="l">${it.product_name||''}</td>
+      <td class="l muted">${it.spec||''}</td>
+      <td class="num">${fmt(it.unit_price)}</td>
+      <td class="num">${fmt(it.nego_price)}</td>
+      <td class="num">${discCell(it.discount)}</td>
+      <td><button class="btn sm green" onclick="saveOneIsvm('${code}')">저장</button></td>
+    </tr>`;
+  }).join('');
+}
+async function refreshIsvm(){ await fetchIsvm(CODES); toast('ISVM 새로고침 완료'); }
+function applyCodes(){
+  const raw = document.getElementById('codesInput').value;
+  const codes = raw.split(/[/,\s]+/).map(s=>s.trim()).filter(Boolean);
+  if(!codes.length){ toast('코드를 입력하세요',true); return; }
+  CODES = codes; fetchIsvm(CODES);
+}
+
+// ── 저장 (ISVM) ───────────────────────────────────────────
+function isvmRow(code, date){
+  const it = ISVM[code];
+  return {
+    recorded_date: date, code, company:'ISVM',
+    product_name: it.product_name, spec: it.spec,
+    unit_price: it.unit_price, nego_price: it.nego_price,
+    discount: it.discount, memo: null,
+  };
+}
+async function saveOneIsvm(code){
+  const it = ISVM[code];
+  if(!it||!it.found||it.discount==null){ toast('조회값이 없어 저장 불가',true); return; }
+  const {error} = await sb.from(TABLE).upsert(isvmRow(code, todayStr()),
+    {onConflict:'code,company,recorded_date'});
+  if(error){ toast('저장 실패: '+error.message,true); return; }
+  toast(`${code} 저장 완료`); loadHistory();
+}
+async function saveAllIsvm(){
+  const rows = CODES.filter(c=>ISVM[c]&&ISVM[c].found&&ISVM[c].discount!=null)
+    .map(c=>isvmRow(c, todayStr()));
+  if(!rows.length){ toast('저장할 ISVM 데이터가 없습니다',true); return; }
+  const {error} = await sb.from(TABLE).upsert(rows,{onConflict:'code,company,recorded_date'});
+  if(error){ toast('저장 실패: '+error.message,true); return; }
+  toast(`오늘 ISVM ${rows.length}건 저장 완료`); loadHistory();
+}
+
+// ── 저장 (타사) ───────────────────────────────────────────
+async function saveCompany(){
+  const code = document.getElementById('cmpCode').value;
+  const company = document.getElementById('cmpCompany').value.trim();
+  const discount = document.getElementById('cmpDiscount').value;
+  const date = document.getElementById('cmpDate').value || todayStr();
+  const memo = document.getElementById('cmpMemo').value.trim() || null;
+  if(!code){ toast('코드를 선택하세요',true); return; }
+  if(!company){ toast('회사명을 입력하세요',true); return; }
+  if(discount===''){ toast('할인율을 입력하세요',true); return; }
+  const it = ISVM[code] || {};
+  const row = {
+    recorded_date:date, code, company,
+    product_name: it.product_name||null, spec: it.spec||null,
+    unit_price:null, nego_price:null, discount:Number(discount), memo,
+  };
+  const {error} = await sb.from(TABLE).upsert(row,{onConflict:'code,company,recorded_date'});
+  if(error){ toast('저장 실패: '+error.message,true); return; }
+  document.getElementById('cmpDiscount').value='';
+  document.getElementById('cmpMemo').value='';
+  toast(`${company} · ${code} 저장 완료`); loadHistory();
+}
+
+// ── 셀렉트 채우기 ─────────────────────────────────────────
+function codeLabel(code){
+  const it = ISVM[code];
+  return it&&it.found ? `${code} · ${it.product_name} ${it.spec}` : code;
+}
+function fillCodeSelects(){
+  const opts = CODES.map(c=>`<option value="${c}">${codeLabel(c)}</option>`).join('');
+  const cmp = document.getElementById('cmpCode');
+  const view = document.getElementById('viewCode');
+  const prevCmp = cmp.value, prevView = view.value;
+  cmp.innerHTML = opts; view.innerHTML = opts;
+  if(CODES.includes(prevCmp)) cmp.value = prevCmp;
+  if(CODES.includes(prevView)) view.value = prevView;
+  renderCompare();
+}
+
+// ── 이력 로드 & 비교 ──────────────────────────────────────
+async function loadHistory(){
+  const {data,error} = await sb.from(TABLE).select('*')
+    .order('recorded_date',{ascending:false}).order('created_at',{ascending:false});
+  if(error){ toast('이력 로드 실패: '+error.message,true); return; }
+  HISTORY = data||[];
+  renderCompare();
+}
+async function delRow(id){
+  if(!confirm('이 기록을 삭제할까요?')) return;
+  const {error} = await sb.from(TABLE).delete().eq('id',id);
+  if(error){ toast('삭제 실패: '+error.message,true); return; }
+  toast('삭제 완료'); loadHistory();
+}
+function renderCompare(){
+  const code = document.getElementById('viewCode').value;
+  const box = document.getElementById('compareBox');
+  if(!code){ box.innerHTML='<div class="empty">코드를 선택하세요.</div>'; return; }
+  const rows = HISTORY.filter(r=>r.code===code);
+  const it = ISVM[code]||{};
+
+  // 회사별 최신 할인율
+  const byCompany = {};
+  for(const r of rows){
+    if(!byCompany[r.company]) byCompany[r.company] = r; // 이미 날짜 desc 정렬됨 → 첫번째가 최신
+  }
+  // ISVM 현재 실시간값도 카드로
+  let latestCards = '';
+  const companies = Object.keys(byCompany).sort((a,b)=> a==='ISVM'?-1:b==='ISVM'?1:a.localeCompare(b));
+
+  let head = `<div class="row" style="margin-bottom:12px;gap:16px">
+    <div><span class="badge">코드</span> <span class="code">${code}</span></div>
+    <div><span class="badge">상품</span> ${it.product_name||'—'} <span class="muted">${it.spec||''}</span></div>
+    ${it.found?`<div><span class="badge">ISVM 현재</span> ${discCell(it.discount)}
+      <span class="muted num">(negoPrice ${fmt(it.nego_price)})</span></div>`:''}
+  </div>`;
+
+  // 최신 비교 표
+  let latest = `<div class="scroll" style="margin-bottom:14px"><table class="subtable">
+    <thead><tr><th class="l">회사</th><th>최신 할인율</th><th class="l">기준일</th><th class="l">메모</th></tr></thead><tbody>`;
+  if(!companies.length){
+    latest += `<tr><td colspan="4" class="empty">저장된 이력이 없습니다. 위에서 저장해보세요.</td></tr>`;
+  } else {
+    latest += companies.map(co=>{
+      const r = byCompany[co];
+      const isI = co==='ISVM';
+      return `<tr>
+        <td class="l cmp-company ${isI?'cmp-isvm':''}">${isI?'🔌 ISVM':co}</td>
+        <td class="num">${discCell(r.discount)}</td>
+        <td class="l muted">${r.recorded_date}</td>
+        <td class="l muted">${r.memo||''}</td>
+      </tr>`;
+    }).join('');
+  }
+  latest += `</tbody></table></div>`;
+
+  // 전체 이력 (날짜순)
+  let hist = `<details><summary>전체 이력 (${rows.length}건) 펼치기 ▾</summary>
+    <div class="scroll" style="margin-top:10px"><table class="subtable">
+    <thead><tr><th class="l">날짜</th><th class="l">회사</th><th>표준단가</th><th>negoPrice</th><th>할인율</th><th class="l">메모</th><th></th></tr></thead><tbody>`;
+  hist += rows.map(r=>`<tr>
+      <td class="l">${r.recorded_date}</td>
+      <td class="l ${r.company==='ISVM'?'cmp-isvm':''}">${r.company}</td>
+      <td class="num">${fmt(r.unit_price)}</td>
+      <td class="num">${fmt(r.nego_price)}</td>
+      <td class="num">${discCell(r.discount)}</td>
+      <td class="l muted">${r.memo||''}</td>
+      <td><button class="del" onclick="delRow(${r.id})">삭제</button></td>
+    </tr>`).join('') || `<tr><td colspan="7" class="empty">이력 없음</td></tr>`;
+  hist += `</tbody></table></div></details>`;
+
+  box.innerHTML = head + latest + hist;
+}
+
+// ── 부트 ─────────────────────────────────────────────────
+async function boot(){
+  document.getElementById('app').style.display='block';
+  document.getElementById('todayLabel').textContent = todayStr();
+  document.getElementById('cmpDate').value = todayStr();
+  const b = await checkBuild();
+  CODES = b.default_codes || [];
+  document.getElementById('codesInput').value = CODES.join('/');
+  await fetchIsvm(CODES);
+  await loadHistory();
+}
+(async()=>{
+  const b = await checkBuild();
+  if(b.authed){ boot(); } else { document.getElementById('gate').style.display='flex';
+    document.getElementById('pinInput').focus(); }
+})();
+</script>
+</body>
+</html>
