@@ -37,10 +37,12 @@ PORT=7001 python3 app.py    # http://localhost:7001
 - unique (code, company, recorded_date) → 하루 1건 upsert (onConflict)
 - RLS: anon select/insert/update/delete 허용 (앱 런타임 전용)
 
-## 기능
-1. **ISVM 조회 표**: 날짜/코드/상품명/규격/표준단가/negoPrice/할인율 + 행별 저장 + "오늘 전체 저장"
-2. **타사 입력**: 코드 선택 + 회사명 + 할인율(%) + 날짜 + 메모 → Supabase 저장
-3. **코드별 비교**: 회사별 최신 할인율 나란히 + 전체 이력(날짜순, 삭제 가능)
+## 기능 (2026-07-02 단일 표로 개편 — 타사입력/비교 탭 삭제)
+1. **통합 표 1개**: 코드/상품명/규격/표준단가/negoPrice/**ISVM 할인율**/**타사 할인율(직접 입력)**/**차이(%p)** 열이 나란히. 차이 = ISVM − 타사, 실시간 계산.
+2. **저장 버튼 1개** (헤더 "💾 저장 (ISVM + 타사)"): ISVM 조회값 전체 + 입력된 타사 할인율을 선택한 날짜로 한 번에 upsert. 행별 저장 버튼 없음.
+3. **날짜(기본 오늘, KST 로컬 기준)** + **타사 회사명**(localStorage 유지) 입력 → 변경 시 해당 날짜/회사의 저장값을 입력칸에 자동 채움, 미저장 최근값은 placeholder로 표시.
+4. **저장 이력**: 표 아래 접힘(details) — 날짜/코드/회사/단가/할인율 + 삭제.
+- ⚠️ `todayStr()`은 로컬 날짜 기준 (`toISOString` UTC 함정 수정됨)
 
 ## 검증 완료
 - ISVM 12/12 조회 (playwright smoke, 콘솔 에러 0)

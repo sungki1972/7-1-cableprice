@@ -61,13 +61,13 @@
   .gate h3{margin:0 0 18px}
   .gate input{width:100%;text-align:center;font-size:22px;letter-spacing:8px;padding:12px;margin-bottom:14px}
   .badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--chip);color:var(--muted)}
-  .cmp-company{font-weight:600}
   .cmp-isvm{color:var(--accent)}
   .del{color:var(--warn);cursor:pointer;font-size:12px;background:none;border:0}
   .empty{color:var(--muted);text-align:center;padding:26px;font-size:13px}
-  .hint{font-size:12px;color:var(--muted);margin:-4px 0 12px}
+  .hint{font-size:12px;color:var(--muted);margin:10px 0 0}
   details summary{cursor:pointer;color:var(--muted);font-size:12px}
   .subtable td,.subtable th{padding:6px 9px;font-size:12px}
+  td input.other-in{width:92px;text-align:right;padding:6px 8px;font-size:13px}
   @media(max-width:640px){ th,td{padding:7px 6px;font-size:12px} main{padding:12px} }
 </style>
 </head>
@@ -88,75 +88,55 @@
   <span class="date" id="todayLabel"></span>
   <span class="spacer"></span>
   <button class="btn ghost sm" onclick="refreshIsvm()">↻ ISVM 새로고침</button>
-  <button class="btn green sm" onclick="saveAllIsvm()">💾 오늘 ISVM 할인율 전체 저장</button>
+  <button class="btn green" onclick="saveAll()">💾 저장 (ISVM + 타사)</button>
 </header>
 
 <main id="app" style="display:none">
 
-  <!-- 1) ISVM 실시간 조회 -->
+  <!-- ISVM vs 타사 통합 표 -->
   <div class="card">
-    <h2>ISVM 실시간 조회 <span class="tag" id="isvmStatus">불러오는 중…</span></h2>
+    <h2>ISVM vs 타사 할인율 <span class="tag" id="isvmStatus">불러오는 중…</span></h2>
     <div class="row" style="margin-bottom:12px">
-      <div class="field" style="flex:1;min-width:240px">
+      <div class="field" style="flex:1;min-width:220px">
         <label>조회 코드 (/ 또는 , 로 구분)</label>
         <input id="codesInput" placeholder="53587/1275/1288 …">
       </div>
       <button class="btn sm" onclick="applyCodes()">코드 적용</button>
+      <div class="field">
+        <label>날짜</label>
+        <input id="dateInput" type="date" style="width:150px" onchange="onKeyChange()">
+      </div>
+      <div class="field">
+        <label>타사 회사명</label>
+        <input id="companyInput" placeholder="예: 대한전선" style="width:140px" onchange="onKeyChange()">
+      </div>
     </div>
     <div class="scroll">
       <table>
         <thead><tr>
           <th class="l">코드</th><th class="l">상품명</th><th class="l">규격</th>
-          <th>표준단가</th><th>negoPrice</th><th>할인율</th><th>저장</th>
+          <th>표준단가</th><th>negoPrice</th><th>ISVM 할인율</th><th>타사 할인율(%)</th><th>차이(%p)</th>
         </tr></thead>
         <tbody id="isvmBody">
-          <tr><td colspan="7" class="empty">로딩 중…</td></tr>
+          <tr><td colspan="8" class="empty">로딩 중…</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="hint">할인율 = ISVM 제공값. 검증식: 표준단가 × (1 − 할인율/100) = negoPrice</div>
-  </div>
-
-  <!-- 2) 타사 할인율 수동 입력 -->
-  <div class="card">
-    <h2>타사 할인율 입력 <span class="tag">수동 · Supabase 저장</span></h2>
-    <div class="row">
-      <div class="field">
-        <label>코드</label>
-        <select id="cmpCode"></select>
-      </div>
-      <div class="field">
-        <label>회사명</label>
-        <input id="cmpCompany" placeholder="예: 대한전선" style="width:130px">
-      </div>
-      <div class="field">
-        <label>할인율(%)</label>
-        <input id="cmpDiscount" type="number" step="0.1" placeholder="-100" style="width:100px">
-      </div>
-      <div class="field">
-        <label>날짜</label>
-        <input id="cmpDate" type="date" style="width:150px">
-      </div>
-      <div class="field" style="flex:1;min-width:160px">
-        <label>메모</label>
-        <input id="cmpMemo" placeholder="비고">
-      </div>
-      <button class="btn green" onclick="saveCompany()">저장</button>
+    <div class="hint">
+      타사 할인율을 입력하고 상단 <b>💾 저장</b> 한 번이면 ISVM + 타사 모두 선택한 날짜로 저장됩니다 (하루 1건 upsert).
+      차이 = ISVM − 타사 (%p, <span class="disc pos">+</span>면 ISVM이 더 할인).
+      입력칸 회색 값 = 해당 회사의 최근 저장값.
     </div>
-    <div class="hint">할인율이 음수면 negoPrice가 표준단가보다 높다는 뜻(전선 특성). 그대로 입력하세요.</div>
-  </div>
-
-  <!-- 3) 코드별 비교 -->
-  <div class="card">
-    <h2>코드별 할인율 비교 <span class="tag">ISVM vs 타사</span></h2>
-    <div class="row" style="margin-bottom:12px">
-      <div class="field">
-        <label>코드 선택</label>
-        <select id="viewCode" onchange="renderCompare()"></select>
+    <details id="histWrap" style="margin-top:14px">
+      <summary>저장 이력 펼치기 ▾ (<span id="histCount">0</span>건)</summary>
+      <div class="scroll" style="margin-top:10px">
+        <table class="subtable">
+          <thead><tr><th class="l">날짜</th><th class="l">코드</th><th class="l">회사</th>
+            <th>표준단가</th><th>negoPrice</th><th>할인율</th><th></th></tr></thead>
+          <tbody id="histBody"><tr><td colspan="7" class="empty">이력 없음</td></tr></tbody>
+        </table>
       </div>
-      <button class="btn ghost sm" onclick="loadHistory()">↻ 이력 새로고침</button>
-    </div>
-    <div id="compareBox"><div class="empty">코드를 선택하세요.</div></div>
+    </details>
   </div>
 
 </main>
@@ -173,9 +153,15 @@ const TABLE = "cable_price_history";
 // ── 상태 ─────────────────────────────────────────────────
 let CODES = [];           // 현재 조회 코드 목록
 let ISVM = {};            // code -> lookup 결과
-let HISTORY = [];         // Supabase 전체 이력 rows
+let HISTORY = [];         // Supabase 전체 이력 rows (날짜 desc)
+let OTHER = {};           // code -> 타사 할인율 입력값(문자열)
 
-const todayStr = () => new Date().toISOString().slice(0,10);
+const todayStr = () => {  // 로컬(KST) 기준 오늘 — toISOString은 UTC라 새벽에 어제로 밀림
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+};
+const selDate = () => document.getElementById('dateInput').value || todayStr();
+const selCompany = () => document.getElementById('companyInput').value.trim();
 
 function toast(msg, err){
   const t = document.getElementById('toast');
@@ -188,6 +174,13 @@ function discCell(d){
   const cls = Number(d)<0 ? 'neg' : 'pos';
   const sign = Number(d)>0 ? '+' : '';
   return `<span class="disc ${cls}">${sign}${Number(d)}%</span>`;
+}
+function diffCell(isvm, other){
+  if(isvm==null||isvm===''||other==null||String(other).trim()==='') return '<span class="muted">—</span>';
+  const d = Math.round((Number(isvm) - Number(other))*10)/10;
+  const cls = d>0 ? 'pos' : d<0 ? 'neg' : '';
+  const sign = d>0 ? '+' : '';
+  return `<span class="disc ${cls}">${sign}${d}</span>`;
 }
 
 // ── PIN ──────────────────────────────────────────────────
@@ -213,27 +206,8 @@ async function fetchIsvm(codes){
   ISVM = j.result || {};
   document.getElementById('isvmStatus').textContent =
     `${todayStr()} · ${Object.values(ISVM).filter(x=>x.found).length}/${codes.length}건`;
+  fillOtherFromHistory();
   renderIsvm();
-  fillCodeSelects();
-}
-function renderIsvm(){
-  const b = document.getElementById('isvmBody');
-  if(!CODES.length){ b.innerHTML='<tr><td colspan="7" class="empty">코드 없음</td></tr>'; return; }
-  b.innerHTML = CODES.map(code=>{
-    const it = ISVM[code] || {};
-    if(!it.found){
-      return `<tr><td class="l code">${code}</td><td colspan="6" class="l muted">조회 안됨${it.error?(' · '+it.error):''}</td></tr>`;
-    }
-    return `<tr>
-      <td class="l code">${code}</td>
-      <td class="l">${it.product_name||''}</td>
-      <td class="l muted">${it.spec||''}</td>
-      <td class="num">${fmt(it.unit_price)}</td>
-      <td class="num">${fmt(it.nego_price)}</td>
-      <td class="num">${discCell(it.discount)}</td>
-      <td><button class="btn sm green" onclick="saveOneIsvm('${code}')">저장</button></td>
-    </tr>`;
-  }).join('');
 }
 async function refreshIsvm(){ await fetchIsvm(CODES); toast('ISVM 새로고침 완료'); }
 function applyCodes(){
@@ -243,7 +217,60 @@ function applyCodes(){
   CODES = codes; fetchIsvm(CODES);
 }
 
-// ── 저장 (ISVM) ───────────────────────────────────────────
+// ── 타사 입력 상태 ────────────────────────────────────────
+function latestOther(code, company){
+  return HISTORY.find(r=>r.code===code && r.company===company) || null; // 날짜 desc → 첫번째가 최신
+}
+function fillOtherFromHistory(){
+  const co = selCompany(), d = selDate();
+  OTHER = {};
+  for(const code of CODES){
+    if(!co){ OTHER[code]=''; continue; }
+    const r = HISTORY.find(x=>x.code===code && x.company===co && x.recorded_date===d);
+    OTHER[code] = (r && r.discount!=null) ? String(r.discount) : '';
+  }
+}
+function onKeyChange(){
+  localStorage.setItem('cable_company', selCompany());
+  fillOtherFromHistory();
+  renderIsvm();
+}
+function onOtherInput(code, v){
+  OTHER[code] = v;
+  const it = ISVM[code] || {};
+  const cell = document.getElementById('diff-'+code);
+  if(cell) cell.innerHTML = diffCell(it.discount, v);
+}
+
+// ── 표 렌더 ──────────────────────────────────────────────
+function renderIsvm(){
+  const b = document.getElementById('isvmBody');
+  if(!CODES.length){ b.innerHTML='<tr><td colspan="8" class="empty">코드 없음</td></tr>'; return; }
+  const co = selCompany();
+  b.innerHTML = CODES.map(code=>{
+    const it = ISVM[code] || {};
+    if(!it.found){
+      return `<tr><td class="l code">${code}</td><td colspan="7" class="l muted">조회 안됨${it.error?(' · '+it.error):''}</td></tr>`;
+    }
+    const val = OTHER[code] ?? '';
+    const last = co ? latestOther(code, co) : null;
+    const ph = (last && last.discount!=null && val==='')
+      ? `${last.discount} (${last.recorded_date.slice(5)})` : '';
+    return `<tr>
+      <td class="l code">${code}</td>
+      <td class="l">${it.product_name||''}</td>
+      <td class="l muted">${it.spec||''}</td>
+      <td class="num">${fmt(it.unit_price)}</td>
+      <td class="num">${fmt(it.nego_price)}</td>
+      <td class="num">${discCell(it.discount)}</td>
+      <td><input class="other-in" type="number" step="0.1" value="${val}" placeholder="${ph}"
+        oninput="onOtherInput('${code}', this.value)"></td>
+      <td class="num" id="diff-${code}">${diffCell(it.discount, val)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 저장 (버튼 1개: ISVM + 타사) ──────────────────────────
 function isvmRow(code, date){
   const it = ISVM[code];
   return {
@@ -253,69 +280,39 @@ function isvmRow(code, date){
     discount: it.discount, memo: null,
   };
 }
-async function saveOneIsvm(code){
-  const it = ISVM[code];
-  if(!it||!it.found||it.discount==null){ toast('조회값이 없어 저장 불가',true); return; }
-  const {error} = await sb.from(TABLE).upsert(isvmRow(code, todayStr()),
+async function saveAll(){
+  const d = selDate(), co = selCompany();
+  const isvmRows = CODES.filter(c=>ISVM[c]&&ISVM[c].found&&ISVM[c].discount!=null)
+    .map(c=>isvmRow(c, d));
+  const otherRows = [];
+  for(const code of CODES){
+    const v = String(OTHER[code] ?? '').trim();
+    if(v==='') continue;
+    if(!co){ toast('타사 할인율을 저장하려면 회사명을 입력하세요',true); return; }
+    const it = ISVM[code] || {};
+    otherRows.push({
+      recorded_date:d, code, company:co,
+      product_name: it.product_name||null, spec: it.spec||null,
+      unit_price:null, nego_price:null, discount:Number(v), memo:null,
+    });
+  }
+  if(!isvmRows.length && !otherRows.length){ toast('저장할 데이터가 없습니다',true); return; }
+  const {error} = await sb.from(TABLE).upsert(isvmRows.concat(otherRows),
     {onConflict:'code,company,recorded_date'});
   if(error){ toast('저장 실패: '+error.message,true); return; }
-  toast(`${code} 저장 완료`); loadHistory();
-}
-async function saveAllIsvm(){
-  const rows = CODES.filter(c=>ISVM[c]&&ISVM[c].found&&ISVM[c].discount!=null)
-    .map(c=>isvmRow(c, todayStr()));
-  if(!rows.length){ toast('저장할 ISVM 데이터가 없습니다',true); return; }
-  const {error} = await sb.from(TABLE).upsert(rows,{onConflict:'code,company,recorded_date'});
-  if(error){ toast('저장 실패: '+error.message,true); return; }
-  toast(`오늘 ISVM ${rows.length}건 저장 완료`); loadHistory();
+  toast(`저장 완료 — ISVM ${isvmRows.length}건${otherRows.length?` + ${co} ${otherRows.length}건`:''} (${d})`);
+  await loadHistory();
 }
 
-// ── 저장 (타사) ───────────────────────────────────────────
-async function saveCompany(){
-  const code = document.getElementById('cmpCode').value;
-  const company = document.getElementById('cmpCompany').value.trim();
-  const discount = document.getElementById('cmpDiscount').value;
-  const date = document.getElementById('cmpDate').value || todayStr();
-  const memo = document.getElementById('cmpMemo').value.trim() || null;
-  if(!code){ toast('코드를 선택하세요',true); return; }
-  if(!company){ toast('회사명을 입력하세요',true); return; }
-  if(discount===''){ toast('할인율을 입력하세요',true); return; }
-  const it = ISVM[code] || {};
-  const row = {
-    recorded_date:date, code, company,
-    product_name: it.product_name||null, spec: it.spec||null,
-    unit_price:null, nego_price:null, discount:Number(discount), memo,
-  };
-  const {error} = await sb.from(TABLE).upsert(row,{onConflict:'code,company,recorded_date'});
-  if(error){ toast('저장 실패: '+error.message,true); return; }
-  document.getElementById('cmpDiscount').value='';
-  document.getElementById('cmpMemo').value='';
-  toast(`${company} · ${code} 저장 완료`); loadHistory();
-}
-
-// ── 셀렉트 채우기 ─────────────────────────────────────────
-function codeLabel(code){
-  const it = ISVM[code];
-  return it&&it.found ? `${code} · ${it.product_name} ${it.spec}` : code;
-}
-function fillCodeSelects(){
-  const opts = CODES.map(c=>`<option value="${c}">${codeLabel(c)}</option>`).join('');
-  const cmp = document.getElementById('cmpCode');
-  const view = document.getElementById('viewCode');
-  const prevCmp = cmp.value, prevView = view.value;
-  cmp.innerHTML = opts; view.innerHTML = opts;
-  if(CODES.includes(prevCmp)) cmp.value = prevCmp;
-  if(CODES.includes(prevView)) view.value = prevView;
-  renderCompare();
-}
-
-// ── 이력 로드 & 비교 ──────────────────────────────────────
+// ── 이력 ─────────────────────────────────────────────────
 async function loadHistory(){
   const {data,error} = await sb.from(TABLE).select('*')
     .order('recorded_date',{ascending:false}).order('created_at',{ascending:false});
   if(error){ toast('이력 로드 실패: '+error.message,true); return; }
   HISTORY = data||[];
-  renderCompare();
+  fillOtherFromHistory();
+  renderIsvm();
+  renderHistory();
 }
 async function delRow(id){
   if(!confirm('이 기록을 삭제할까요?')) return;
@@ -323,76 +320,32 @@ async function delRow(id){
   if(error){ toast('삭제 실패: '+error.message,true); return; }
   toast('삭제 완료'); loadHistory();
 }
-function renderCompare(){
-  const code = document.getElementById('viewCode').value;
-  const box = document.getElementById('compareBox');
-  if(!code){ box.innerHTML='<div class="empty">코드를 선택하세요.</div>'; return; }
-  const rows = HISTORY.filter(r=>r.code===code);
-  const it = ISVM[code]||{};
-
-  // 회사별 최신 할인율
-  const byCompany = {};
-  for(const r of rows){
-    if(!byCompany[r.company]) byCompany[r.company] = r; // 이미 날짜 desc 정렬됨 → 첫번째가 최신
-  }
-  // ISVM 현재 실시간값도 카드로
-  let latestCards = '';
-  const companies = Object.keys(byCompany).sort((a,b)=> a==='ISVM'?-1:b==='ISVM'?1:a.localeCompare(b));
-
-  let head = `<div class="row" style="margin-bottom:12px;gap:16px">
-    <div><span class="badge">코드</span> <span class="code">${code}</span></div>
-    <div><span class="badge">상품</span> ${it.product_name||'—'} <span class="muted">${it.spec||''}</span></div>
-    ${it.found?`<div><span class="badge">ISVM 현재</span> ${discCell(it.discount)}
-      <span class="muted num">(negoPrice ${fmt(it.nego_price)})</span></div>`:''}
-  </div>`;
-
-  // 최신 비교 표
-  let latest = `<div class="scroll" style="margin-bottom:14px"><table class="subtable">
-    <thead><tr><th class="l">회사</th><th>최신 할인율</th><th class="l">기준일</th><th class="l">메모</th></tr></thead><tbody>`;
-  if(!companies.length){
-    latest += `<tr><td colspan="4" class="empty">저장된 이력이 없습니다. 위에서 저장해보세요.</td></tr>`;
-  } else {
-    latest += companies.map(co=>{
-      const r = byCompany[co];
-      const isI = co==='ISVM';
-      return `<tr>
-        <td class="l cmp-company ${isI?'cmp-isvm':''}">${isI?'🔌 ISVM':co}</td>
-        <td class="num">${discCell(r.discount)}</td>
-        <td class="l muted">${r.recorded_date}</td>
-        <td class="l muted">${r.memo||''}</td>
-      </tr>`;
-    }).join('');
-  }
-  latest += `</tbody></table></div>`;
-
-  // 전체 이력 (날짜순)
-  let hist = `<details><summary>전체 이력 (${rows.length}건) 펼치기 ▾</summary>
-    <div class="scroll" style="margin-top:10px"><table class="subtable">
-    <thead><tr><th class="l">날짜</th><th class="l">회사</th><th>표준단가</th><th>negoPrice</th><th>할인율</th><th class="l">메모</th><th></th></tr></thead><tbody>`;
-  hist += rows.map(r=>`<tr>
+function renderHistory(){
+  document.getElementById('histCount').textContent = HISTORY.length;
+  const b = document.getElementById('histBody');
+  if(!HISTORY.length){ b.innerHTML='<tr><td colspan="7" class="empty">이력 없음</td></tr>'; return; }
+  b.innerHTML = HISTORY.map(r=>`<tr>
       <td class="l">${r.recorded_date}</td>
-      <td class="l ${r.company==='ISVM'?'cmp-isvm':''}">${r.company}</td>
+      <td class="l code">${r.code}</td>
+      <td class="l ${r.company==='ISVM'?'cmp-isvm':''}">${r.company==='ISVM'?'🔌 ISVM':r.company}</td>
       <td class="num">${fmt(r.unit_price)}</td>
       <td class="num">${fmt(r.nego_price)}</td>
       <td class="num">${discCell(r.discount)}</td>
-      <td class="l muted">${r.memo||''}</td>
       <td><button class="del" onclick="delRow(${r.id})">삭제</button></td>
-    </tr>`).join('') || `<tr><td colspan="7" class="empty">이력 없음</td></tr>`;
-  hist += `</tbody></table></div></details>`;
-
-  box.innerHTML = head + latest + hist;
+    </tr>`).join('');
 }
 
 // ── 부트 ─────────────────────────────────────────────────
 async function boot(){
   document.getElementById('app').style.display='block';
   document.getElementById('todayLabel').textContent = todayStr();
-  document.getElementById('cmpDate').value = todayStr();
+  document.getElementById('dateInput').value = todayStr();
+  document.getElementById('companyInput').value = localStorage.getItem('cable_company') || '';
   const b = await checkBuild();
   CODES = b.default_codes || [];
   document.getElementById('codesInput').value = CODES.join('/');
-  await fetchIsvm(CODES);
   await loadHistory();
+  await fetchIsvm(CODES);
 }
 (async()=>{
   const b = await checkBuild();
