@@ -15,6 +15,8 @@ cd /home/gihwaja/apps/7-1-cableprice
 PORT=7001 python3 app.py    # http://localhost:7001
 ```
 배포: Vercel zero-config (`vercel.json` = @vercel/python, 5-16 프로젝트와 동일 패턴)
+- **Production: https://7-1-cableprice.vercel.app** (scope sungseungkis-projects, push 자동배포 아님 → `vercel --prod --yes`)
+- Repo: `sungki1972/7-1-cableprice` (SSH push)
 
 ## ISVM API (핵심)
 - 로그인: POST `https://isvm.co.kr/login` {custId:gihwaja, custPw:DMSWNS9151, loc:win}
@@ -44,8 +46,8 @@ PORT=7001 python3 app.py    # http://localhost:7001
 4. **저장 이력 탭** (상단 탭 2개: 📡 실시간 조회 / 🗂 저장 이력): **날짜 select + 회사 select** → 코드별로 ISVM vs 선택한 타사 1곳 1:1 비교(ISVM 할인율/타사 할인율/차이 %p). 날짜 바꾸면 그 날짜의 회사 목록으로 갱신. 탭 열 때마다 loadHistory 재조회. 상세 목록(details)에서 건별 삭제.
 - ⚠️ `todayStr()`은 로컬 날짜 기준 (`toISOString` UTC 함정 수정됨)
 
-## 검증 완료
-- ISVM 12/12 조회 (playwright smoke, 콘솔 에러 0)
-- PIN 게이트 → 표 렌더 → 셀렉트 채움 → 비교뷰 렌더
-- Supabase anon 읽기 프로브 OK
-- ⚠️ 저장(write) 경로는 사용자가 앱 UI에서 최초 1회 확인 필요 (DB 직접변경 금지 규칙상 에이전트 미실행)
+## 검증 완료 (2026-07-02 기준)
+- playwright 스모크 17/17: PIN 게이트 → ISVM 12/12 조회 → 저장 버튼 1개 → 타사 입력칸 12개 → 차이 실시간 계산 → 탭 전환 → 날짜+회사 1:1 비교 표 → 콘솔 에러 0
+- 저장(write) 경로: **사용자가 앱 UI에서 직접 확인 완료** (ISVM + 타사 EMG 등 upsert 정상)
+- Production 배포 반영 확인 (curl로 새 버전 마커 grep)
+- 스모크 스크립트는 세션 scratchpad에 있었음(휘발) — 재검증 시 새로 작성 필요
