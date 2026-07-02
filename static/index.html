@@ -145,7 +145,11 @@
     <div class="row" style="margin-bottom:12px">
       <div class="field">
         <label>날짜 선택</label>
-        <select id="histDate" onchange="renderSaved()" style="min-width:150px"></select>
+        <select id="histDate" onchange="fillHistCompanies();renderSaved()" style="min-width:150px"></select>
+      </div>
+      <div class="field">
+        <label>회사 선택</label>
+        <select id="histCompany" onchange="renderSaved()" style="min-width:140px"></select>
       </div>
       <button class="btn ghost sm" onclick="refreshHist()">↻ 새로고침</button>
     </div>
@@ -155,7 +159,7 @@
         <tbody id="savedBody"><tr><td class="empty">저장된 이력이 없습니다.</td></tr></tbody>
       </table>
     </div>
-    <div class="hint">각 타사 열의 회색 괄호 = ISVM과의 차이(%p, +면 ISVM이 더 할인).</div>
+    <div class="hint">날짜 → 그 날짜에 저장된 회사 하나를 골라 ISVM과 1:1 비교. 차이 = ISVM − 타사 (%p, +면 ISVM이 더 할인).</div>
     <details style="margin-top:14px">
       <summary>상세 목록 펼치기 ▾ (<span id="histCount">0</span>건, 삭제 가능)</summary>
       <div class="scroll" style="margin-top:10px">
@@ -363,17 +367,30 @@ function fillHistDates(){
   const prev = sel.value;
   sel.innerHTML = dates.map(d=>`<option value="${d}">${d}</option>`).join('');
   if(dates.includes(prev)) sel.value = prev;
+  fillHistCompanies();
+}
+function fillHistCompanies(){
+  const sel = document.getElementById('histCompany');
+  const d = document.getElementById('histDate').value;
+  const companies = [...new Set(HISTORY
+    .filter(r=>r.recorded_date===d && r.company!=='ISVM')
+    .map(r=>r.company))].sort();
+  const prev = sel.value;
+  sel.innerHTML = companies.length
+    ? companies.map(co=>`<option value="${co}">${co}</option>`).join('')
+    : '<option value="">타사 없음</option>';
+  if(companies.includes(prev)) sel.value = prev;
 }
 function renderSaved(){
   const head = document.getElementById('savedHead');
   const body = document.getElementById('savedBody');
   const d = document.getElementById('histDate').value;
+  const co = document.getElementById('histCompany').value;
   const rows = HISTORY.filter(r=>r.recorded_date===d);
   if(!d || !rows.length){
     head.innerHTML=''; body.innerHTML='<tr><td class="empty">저장된 이력이 없습니다. 실시간 조회 탭에서 💾 저장해보세요.</td></tr>';
     return;
   }
-  const companies = [...new Set(rows.filter(r=>r.company!=='ISVM').map(r=>r.company))].sort();
   // 코드 순서: 현재 조회 코드 순 → 그 외는 뒤에
   const inRows = [...new Set(rows.map(r=>r.code))];
   const codes = CODES.filter(c=>inRows.includes(c)).concat(inRows.filter(c=>!CODES.includes(c)));
@@ -383,22 +400,13 @@ function renderSaved(){
   head.innerHTML = `<tr>
     <th class="l">코드</th><th class="l">상품명</th><th class="l">규격</th>
     <th>표준단가</th><th>negoPrice</th><th>ISVM 할인율</th>
-    ${companies.map(co=>`<th>${co}</th>`).join('')}
+    <th>${co||'타사'} 할인율</th><th>차이(%p)</th>
   </tr>`;
   body.innerHTML = codes.map(code=>{
     const g = byCode[code] || {};
     const iv = g['ISVM'];
-    const name = (iv||Object.values(g)[0]||{});
-    const coCells = companies.map(co=>{
-      const r = g[co];
-      if(!r || r.discount==null) return '<td class="num"><span class="muted">—</span></td>';
-      let mini = '';
-      if(iv && iv.discount!=null){
-        const df = Math.round((Number(iv.discount)-Number(r.discount))*10)/10;
-        mini = `<span class="diff-mini">(${df>0?'+':''}${df})</span>`;
-      }
-      return `<td class="num">${discCell(r.discount)}${mini}</td>`;
-    }).join('');
+    const cr = co ? g[co] : null;
+    const name = (iv||cr||Object.values(g)[0]||{});
     return `<tr>
       <td class="l code">${code}</td>
       <td class="l">${name.product_name||''}</td>
@@ -406,7 +414,8 @@ function renderSaved(){
       <td class="num">${iv?fmt(iv.unit_price):'—'}</td>
       <td class="num">${iv?fmt(iv.nego_price):'—'}</td>
       <td class="num">${iv?discCell(iv.discount):'<span class="muted">—</span>'}</td>
-      ${coCells}
+      <td class="num">${cr?discCell(cr.discount):'<span class="muted">—</span>'}</td>
+      <td class="num">${diffCell(iv?.discount, cr?.discount)}</td>
     </tr>`;
   }).join('');
 }
